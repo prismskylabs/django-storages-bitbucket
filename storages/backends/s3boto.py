@@ -226,7 +226,7 @@ class S3BotoStorage(Storage):
     bucket_acl = setting('AWS_BUCKET_ACL', default_acl)
     querystring_auth = setting('AWS_QUERYSTRING_AUTH', True)
     querystring_expire = setting('AWS_QUERYSTRING_EXPIRE', 3600)
-    querystring_expire_from_utc_midnight = setting('AWS_QUERYSTRING_EXPIRE_FROM_UTC_MIDNIGHT', False)
+    querystring_absolute_expire_mode = setting('AWS_QUERYSTRING_ABSOLUTE_EXPIRE_MODE', False)
     reduced_redundancy = setting('AWS_REDUCED_REDUNDANCY', False)
     location = setting('AWS_LOCATION', '')
     encryption = setting('AWS_S3_ENCRYPTION', False)
@@ -489,12 +489,13 @@ class S3BotoStorage(Storage):
         if self.custom_domain:
             return "%s//%s/%s" % (self.url_protocol,
                                   self.custom_domain, filepath_to_uri(name))
-        if self.querystring_expire_from_utc_midnight:
-            offset = timedelta(seconds=self.querystring_expire_from_utc_midnight)
-            utc_midnight = datetime.utcnow().replace(hour=0, minute=0, second=0)
-            time_to_expire = utc_midnight + offset
-            time_to_expire_epoch = int(round(time.mktime(time_to_expire.timetuple())))
-            expiration = time_to_expire_epoch
+        if self.querystring_absolute_expire_mode:
+            # Sets the expiration to midnight of UTC tomorrow.
+            # This sets the urls with an absolute timestamp for 'expires' param
+            offset = timedelta(seconds=172800)  # 2 days
+            midnight_tomorrow = datetime.utcnow().replace(hour=0, minute=0, second=0) + offset
+            midnight_tomorrow_epoch = int(round(time.mktime(midnight_tomorrow.timetuple())))
+            expiration = midnight_tomorrow_epoch
             expires_in_absolute = True
         else:
             expiration = self.querystring_expire
