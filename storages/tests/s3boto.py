@@ -1,5 +1,6 @@
 import mock
 import datetime
+import time
 import urlparse
 
 from django.test import TestCase
@@ -21,11 +22,20 @@ class ParseTsExtendedCase(TestCase):
         value = s3boto.parse_ts_extended("Wed, 13 Mar 2013 12:45:49 GMT")
         self.assertEquals(value, datetime.datetime(2013, 3, 13, 12, 45, 49))
 
+
 class S3BotoTestCase(TestCase):
     @mock.patch('storages.backends.s3boto.S3Connection')
     def setUp(self, S3Connection):
         self.storage = s3boto.S3BotoStorage()
         self.storage._connection = mock.MagicMock()
+        # Storage with defined setting 'querystring_expire_from_utc_midnight'
+        self.seconds_after_utc_midnight = 172800
+        settings = {
+            'querystring_expire_from_utc_midnight': self.seconds_after_utc_midnight
+        }
+        self.storage1 = s3boto.S3BotoStorage(**settings)
+        self.storage1._connection = mock.MagicMock()
+
 
 class SafeJoinTest(TestCase):
     def test_normal(self):
@@ -268,6 +278,27 @@ class S3BotoStorageTests(S3BotoTestCase):
             force_http=not self.storage.secure_urls,
             headers=None,
             response_headers=None,
+            expires_in_absolute=False
+        )
+
+    def test_storage_url_with_absolute_expiry(self):
+        name = 'test_storage_size.txt'
+        url = 'http://aws.amazon.com/%s' % name
+        self.storage1.connection.generate_url.return_value = url
+        self.assertEquals(self.storage1.url(name), url)
+        offset = datetime.timedelta(seconds=self.seconds_after_utc_midnight)
+        time_to_expire = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0) + offset
+        time_to_expire_epoch = int(round(time.mktime(time_to_expire.timetuple())))
+        self.storage1.connection.generate_url.assert_called_with(
+            time_to_expire_epoch,
+            method='GET',
+            bucket=self.storage1.bucket.name,
+            key=name,
+            query_auth=self.storage1.querystring_auth,
+            force_http=not self.storage1.secure_urls,
+            headers=None,
+            response_headers=None,
+            expires_in_absolute=True
         )
 
     def test_generated_url_is_encoded(self):
