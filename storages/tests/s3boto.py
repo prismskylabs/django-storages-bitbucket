@@ -28,10 +28,9 @@ class S3BotoTestCase(TestCase):
     def setUp(self, S3Connection):
         self.storage = s3boto.S3BotoStorage()
         self.storage._connection = mock.MagicMock()
-        # Storage with defined setting 'querystring_expire_from_utc_midnight'
-        self.seconds_after_utc_midnight = 172800
+        # Storage with defined setting 'querystring_absolute_expire_mode'
         settings = {
-            'querystring_expire_from_utc_midnight': self.seconds_after_utc_midnight
+            'querystring_absolute_expire_mode': True
         }
         self.storage1 = s3boto.S3BotoStorage(**settings)
         self.storage1._connection = mock.MagicMock()
@@ -286,11 +285,11 @@ class S3BotoStorageTests(S3BotoTestCase):
         url = 'http://aws.amazon.com/%s' % name
         self.storage1.connection.generate_url.return_value = url
         self.assertEquals(self.storage1.url(name), url)
-        offset = datetime.timedelta(seconds=self.seconds_after_utc_midnight)
-        time_to_expire = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0) + offset
-        time_to_expire_epoch = int(round(time.mktime(time_to_expire.timetuple())))
+        offset = datetime.timedelta(seconds=172800)
+        midnight_tomorrow = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0) + offset
+        midnight_tomorrow_epoch = int(round(time.mktime(midnight_tomorrow.timetuple())))
         self.storage1.connection.generate_url.assert_called_with(
-            time_to_expire_epoch,
+            midnight_tomorrow_epoch,
             method='GET',
             bucket=self.storage1.bucket.name,
             key=name,
