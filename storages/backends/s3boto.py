@@ -1,9 +1,10 @@
+from datetime import datetime, timedelta
 import os
 import posixpath
 import mimetypes
 from gzip import GzipFile
-import datetime
 from tempfile import SpooledTemporaryFile
+import time
 
 try:
     from cStringIO import StringIO
@@ -40,7 +41,7 @@ def parse_ts_extended(ts):
     try:
         rv = parse_ts(ts)
     except ValueError:
-        rv = datetime.datetime.strptime(ts, RFC1123)
+        rv = datetime.strptime(ts, RFC1123)
     return rv
 
 
@@ -225,6 +226,7 @@ class S3BotoStorage(Storage):
     bucket_acl = setting('AWS_BUCKET_ACL', default_acl)
     querystring_auth = setting('AWS_QUERYSTRING_AUTH', True)
     querystring_expire = setting('AWS_QUERYSTRING_EXPIRE', 3600)
+    querystring_absolute_expire_mode = setting('AWS_QUERYSTRING_ABSOLUTE_EXPIRE_MODE', False)
     reduced_redundancy = setting('AWS_REDUCED_REDUNDANCY', False)
     location = setting('AWS_LOCATION', '')
     encryption = setting('AWS_S3_ENCRYPTION', False)
@@ -487,11 +489,23 @@ class S3BotoStorage(Storage):
         if self.custom_domain:
             return "%s//%s/%s" % (self.url_protocol,
                                   self.custom_domain, filepath_to_uri(name))
-        return self.connection.generate_url(self.querystring_expire,
-            method='GET', bucket=self.bucket.name, key=self._encode_name(name),
-            headers=headers,
+        if self.querystring_absolute_expire_mode:
+            # Sets the expiration to midnight of UTC tomorrow.
+            # This sets the urls with an absolute timestamp for 'expires' param
+            offset = timedelta(seconds=172800)  # 2 days
+            midnight_tomorrow = datetime.utcnow().replace(hour=0, minute=0, second=0) + offset
+            midnight_tomorrow_epoch = int(round(time.mktime(midnight_tomorrow.timetuple())))
+            expiration = midnight_tomorrow_epoch
+            expires_in_absolute = True
+        else:
+            expiration = self.querystring_expire
+            expires_in_absolute = False
+
+        return self.connection.generate_url(
+            expiration, method='GET', bucket=self.bucket.name,
+            key=self._encode_name(name), headers=headers,
             query_auth=self.querystring_auth, force_http=not self.secure_urls,
-            response_headers=response_headers)
+            response_headers=response_headers, expires_in_absolute=expires_in_absolute)
 
     def get_available_name(self, name):
         """ Overwrite existing file with the same name. """
